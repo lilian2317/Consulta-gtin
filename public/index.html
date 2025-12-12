@@ -41,15 +41,36 @@
 
 <div class="card" id="res">Aguardando…</div>
 
-
 <script src="https://unpkg.com/@zxing/library@latest"></script>
 <script>
 let reader;
+let audioCtx;
+let lastQuery = "";     // guarda o último GTIN/nome buscado
+let scanning = false;   // evita abrir câmera duplicada
+
+function beep() {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = "sine";
+    o.frequency.value = 880;
+    g.gain.value = 0.08;
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start();
+    setTimeout(() => o.stop(), 90);
+  } catch (e) {}
+}
 
 function formatPrice(v){
   if (v === null || v === undefined || v === "") return "—";
   if (typeof v === "number") return v.toLocaleString("pt-BR", {style:"currency", currency:"BRL"});
-  return "R$ " + String(v);
+  // se vier texto, tenta manter bonitinho
+  return String(v).includes("R$") ? String(v) : ("R$ " + String(v));
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
 }
 
 function renderItems(items){
@@ -58,23 +79,28 @@ function renderItems(items){
 
   res.innerHTML = items.map((d) => `
     <div style="margin-bottom:18px;">
-      <div class="itemTitle">${escapeHtml(d.name)}</div>
-      <div class="itemPrice">Preço: ${escapeHtml(formatPrice(d.preco))}</div>
+      <div style="font-size:26px;font-weight:900;margin-bottom:6px;">${escapeHtml(d.name)}</div>
+
+      <div style="font-size:24px;font-weight:900;margin-bottom:10px;">
+        Preço:
+        <span style="display:inline-block;background:#ffe45c;color:#111;padding:6px 10px;border-radius:10px;font-weight:900;">
+          ${escapeHtml(formatPrice(d.preco))}
+        </span>
+      </div>
+
       ${d.gtin ? `<div class="hint">GTIN: ${escapeHtml(d.gtin)}</div>` : ""}
-      ${d.img ? `<img src="${d.img}" alt="Imagem do produto">` : ""}
+      ${d.img ? `<img src="${d.img}" alt="Imagem do produto" style="width:100%;max-height:320px;object-fit:contain;border-radius:14px;margin-top:10px;background:#0b0b0b;">` : ""}
     </div>
   `).join('<hr style="border:0;border-top:1px solid #2a2a2a;margin:12px 0;">');
-}
-
-function escapeHtml(s){
-  return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
 }
 
 async function buscar(forced){
   const q = (forced || document.getElementById("q").value).trim();
   if (!q) { document.getElementById("res").textContent = "Digite um GTIN ou um nome."; return; }
 
-  document.getElementById("res").textContent = "Buscando…";
+  lastQuery = q;
+  document.getElementById("res").textContent = "Buscando no Notion…";
+
   const r = await fetch(`/api/lookup?q=${encodeURIComponent(q)}`);
   const d = await r.json().catch(()=> ({}));
 
@@ -84,23 +110,64 @@ async function buscar(forced){
   renderItems(d.items);
 }
 
+function atualizar(){
+  if (!lastQuery) {
+    document.getElementById("res").textContent = "Nada para atualizar. Busque/escaneie um produto primeiro.";
+    return;
+  }
+  buscar(lastQuery); // refaz a consulta direto no Notion (valor mais recente)
+}
+
 async function scan(){
-  reader = new ZXing.BrowserBarcodeReader();
+  if (scanning) return;
+  scanning = true;
+
+  const resBox = document.getElementById("res");
+  resBox.innerHTML = `<div class="hint">Aponte para o código. Se desfocar, <b>afaste o celular</b> até ficar nítido.</div>`;
+
+  // fecha scan anterior se tiver
+  try { reader?.reset?.(); } catch(e) {}
+
   const video = document.createElement("video");
   video.setAttribute("playsinline", "true");
   video.style.width = "100%";
   video.style.borderRadius = "18px";
-  document.querySelector(".wrap").insertBefore(video, document.getElementById("res"));
+  video.style.transform = "scale(1.15)";
+  document.querySelector(".wrap").insertBefore(video, resBox);
 
-  reader.decodeFromVideoDevice(null, video, (result) => {
-    if(result){
-      reader.reset();
-      video.remove();
-      document.getElementById("q").value = result.text;
-      buscar(result.text);
-    }
-  });
+  // ✅ Formatos GTIN mais comuns
+  const hints = new Map();
+  hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+    ZXing.BarcodeFormat.EAN_13,
+    ZXing.BarcodeFormat.EAN_8,
+    ZXing.BarcodeFormat.UPC_A
+  ]);
+
+  reader = new ZXing.BrowserMultiFormatReader(hints);
+
+  try {
+    const devices = await ZXing.BrowserCodeReader.listVideoInputDevices();
+    const backCam = devices.find(d => /back|traseira|rear/i.test(d.label)) || devices[0];
+
+    reader.decodeFromVideoDevice(backCam?.deviceId ?? null, video, (result) => {
+      if (result) {
+        const code = result.getText().trim();
+
+        // encerra scan
+        try { reader.reset(); } catch(e) {}
+        video.remove();
+        scanning = false;
+
+        beep();
+
+        document.getElementById("q").value = code;
+        buscar(code);
+      }
+    });
+  } catch (e) {
+    video.remove();
+    resBox.textContent = "Não consegui acessar a câmera. Verifique permissões do navegador.";
+    scanning = false;
+  }
 }
 </script>
-</body>
-</html>
