@@ -17,7 +17,6 @@
     button.update { background:#22c55e; color:#000; }
     button.gray { background:#3a3a3a; color:#fff; }
 
-    /* ✅ linha de botões lado a lado */
     .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 
     input { background:#fff; color:#000; }
@@ -43,7 +42,6 @@
 
     hr { border:0; border-top:1px solid #2a2a2a; margin:14px 0; }
 
-    /* ✅ Alerta verde visual */
     .okBanner {
       display:none;
       text-align:center;
@@ -56,7 +54,6 @@
     }
     .okBanner.show { display:block; }
 
-    /* vídeo do scanner */
     #scanVideo {
       width:100%;
       border-radius:18px;
@@ -74,18 +71,16 @@
   <button onclick="scan()">📷 Escanear código de barras</button>
 
   <div class="hint">
-    Se a câmera desfocar, <b>afaste o celular</b> até o código ficar bem nítido.
+    Se a câmera desfocar, <b>afaste o celular</b> até o código ficar nítido.
   </div>
 
   <input id="q" placeholder="Digite o GTIN ou o nome do produto">
 
-  <!-- ✅ Buscar + Limpar lado a lado -->
   <div class="row">
     <button onclick="buscar()">🔍 Buscar</button>
     <button class="gray" onclick="limpar()">🧹 Limpar</button>
   </div>
 
-  <!-- ✅ Atualizar embaixo -->
   <button class="update" onclick="atualizar()">🔄 Atualizar</button>
 
   <div id="ok" class="okBanner">✅ CÓDIGO LIDO!</div>
@@ -99,8 +94,10 @@
 let reader = null;
 let lastQuery = "";
 let scanning = false;
+let videoEl = null;
 
-let videoEl = null;  // referência do vídeo atual
+let lastScanValue = null;
+let sameScanCount = 0;
 
 function beep(){
   try{
@@ -110,6 +107,12 @@ function beep(){
     o.connect(ctx.destination);
     o.start();
     setTimeout(() => o.stop(), 80);
+  }catch(e){}
+}
+
+function vibrate(pattern=[60]){
+  try{
+    if(navigator.vibrate) navigator.vibrate(pattern);
   }catch(e){}
 }
 
@@ -130,9 +133,8 @@ function isZeroOrEmpty(v){
   if (typeof v === "number") return v === 0;
   const t = String(v).trim();
   if (!t) return true;
-  // aceita "0", "0,00", "0.00", "R$ 0", etc.
   const digits = t.replace(/[^\d.,-]/g, "");
-  return digits === "0" || digits === "0,0" || digits === "0,00" || digits === "0.0" || digits === "0.00";
+  return ["0","0,0","0,00","0.0","0.00"].includes(digits);
 }
 
 function formatPrice(v){
@@ -160,24 +162,20 @@ function renderItems(items){
     return;
   }
 
-  res.innerHTML = items.map(p => {
-    const needPriceWarn = isZeroOrEmpty(p.preco);
+  res.innerHTML = items.map(p => `
+    <div>
+      <div class="product-name">${escapeHtml(p.name)}</div>
 
-    return `
-      <div>
-        <div class="product-name">${escapeHtml(p.name)}</div>
-
-        <div class="price">
-          Preço: <span>${escapeHtml(formatPrice(p.preco))}</span>
-        </div>
-
-        ${needPriceWarn ? `<div class="warn"><b>Preço ainda não definido.</b> Tomar providências.</div>` : ""}
-
-        ${p.gtin ? `<div class="hint">GTIN: ${escapeHtml(p.gtin)}</div>` : ""}
-        ${p.img ? `<img src="${p.img}" alt="Imagem do produto">` : ""}
+      <div class="price">
+        Preço: <span>${escapeHtml(formatPrice(p.preco))}</span>
       </div>
-    `;
-  }).join('<hr>');
+
+      ${isZeroOrEmpty(p.preco) ? `<div class="warn"><b>Preço ainda não definido.</b> Tomar providências.</div>` : ""}
+
+      ${p.gtin ? `<div class="hint">GTIN: ${escapeHtml(p.gtin)}</div>` : ""}
+      ${p.img ? `<img src="${p.img}" alt="Imagem do produto">` : ""}
+    </div>
+  `).join('<hr>');
 }
 
 function limpar(){
@@ -188,9 +186,7 @@ function limpar(){
 }
 
 async function buscar(forced){
-  // ✅ Se eu buscar digitando, fecha a câmera automaticamente
   stopScan();
-
   const q = (forced || document.getElementById("q").value).trim();
   if(!q){
     document.getElementById("res").textContent = "Digite um GTIN ou nome.";
@@ -212,11 +208,9 @@ async function buscar(forced){
 }
 
 function atualizar(){
-  // ✅ Atualizar também fecha a câmera
   stopScan();
-
   if(!lastQuery){
-    document.getElementById("res").textContent = "Busque ou escaneie um produto primeiro.";
+    document.getElementById("res").textContent = "Busque um produto primeiro.";
     return;
   }
   buscar(lastQuery);
@@ -224,27 +218,30 @@ function atualizar(){
 
 async function scan(){
   if(scanning) return;
-  scanning = true;
 
-  // se já tinha algum scan anterior, encerra
+  lastScanValue = null;
+  sameScanCount = 0;
+
   stopScan();
   scanning = true;
 
   const resBox = document.getElementById("res");
   resBox.innerHTML = `
     <div class="hint">
-      Aponte para o código.<br>
-      Se desfocar, <b>afaste o celular</b>.
+      <b>Modo câmera</b><br>
+      Aponte para o código (15–25 cm).<br>
+      Evite reflexo e segure firme.
     </div>
+    <div class="hint" id="scanMsg" style="margin-top:10px;">📷 Preparando câmera…</div>
   `;
 
-  // cria o vídeo e guarda referência
+  const msgEl = document.getElementById("scanMsg");
+
   videoEl = document.createElement("video");
   videoEl.id = "scanVideo";
   videoEl.setAttribute("playsinline","true");
   document.querySelector(".wrap").insertBefore(videoEl, resBox);
 
-  // ✅ Formatos GTIN mais comuns
   const hints = new Map();
   hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,[
     ZXing.BarcodeFormat.EAN_13,
@@ -255,22 +252,34 @@ async function scan(){
   reader = new ZXing.BrowserMultiFormatReader(hints);
 
   try{
-    // ✅ iPhone: não escolher deviceId (mais estável)
     reader.decodeFromVideoDevice(null, videoEl, (result) => {
-      if(result){
-        const code = result.getText().trim();
+      if(!result) return;
 
-        stopScan();
-        beep();
-        flashGreen();
-
-        document.getElementById("q").value = code;
-        buscar(code);
+      const code = result.getText().replace(/\D/g, "");
+      if (![8,12,13].includes(code.length)) {
+        msgEl.textContent = "⚠️ Ajuste a distância ou o foco…";
+        return;
       }
+
+      if (code === lastScanValue) sameScanCount++;
+      else { lastScanValue = code; sameScanCount = 1; }
+
+      if (sameScanCount < 2) {
+        msgEl.textContent = `Confirmando leitura (${sameScanCount}/2)… segure firme.`;
+        return;
+      }
+
+      stopScan();
+      vibrate([60,40,60]);
+      beep();
+      flashGreen();
+
+      document.getElementById("q").value = code;
+      buscar(code);
     });
   }catch(e){
     stopScan();
-    resBox.textContent = "Não foi possível acessar a câmera. Feche e abra o app.";
+    resBox.textContent = "Erro ao acessar a câmera.";
   }
 }
 </script>
