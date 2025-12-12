@@ -60,6 +60,26 @@
       margin-top:10px;
       background:#000;
     }
+
+    /* ✅ Overlay central para mensagens do scanner */
+    .scanOverlay {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,0,0.85);
+      border-radius: 18px;
+      padding: 20px 22px;
+      text-align: center;
+      font-size: 22px;
+      line-height: 1.35;
+      z-index: 9999;
+      max-width: 90%;
+      box-shadow: 0 0 0 2px rgba(255,255,255,0.05);
+      pointer-events: none;
+    }
+    .scanOverlay b { font-weight: 900; }
+    .scanOverlay.hide { display:none; }
   </style>
 </head>
 
@@ -88,6 +108,9 @@
   <div class="card" id="res">Aguardando…</div>
 
 </div>
+
+<!-- ✅ Overlay central (fica no campo de visão) -->
+<div id="scanOverlay" class="scanOverlay hide">📷 Preparando câmera…</div>
 
 <script src="https://unpkg.com/@zxing/library@latest"></script>
 <script>
@@ -122,6 +145,16 @@ function flashGreen(){
   setTimeout(() => ok.classList.remove("show"), 800);
 }
 
+function showOverlay(msg){
+  const o = document.getElementById("scanOverlay");
+  o.innerHTML = msg;
+  o.classList.remove("hide");
+}
+
+function hideOverlay(){
+  document.getElementById("scanOverlay").classList.add("hide");
+}
+
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, m =>
     ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])
@@ -153,6 +186,7 @@ function stopScan(){
   }
   videoEl = null;
   scanning = false;
+  hideOverlay();
 }
 
 function renderItems(items){
@@ -225,17 +259,19 @@ async function scan(){
   stopScan();
   scanning = true;
 
+  // mensagens no overlay (centro da tela)
+  showOverlay(`
+    <b>Modo câmera</b><br>
+    Aponte para o código (15–25 cm).<br>
+    Evite reflexo e segure firme.
+  `);
+
   const resBox = document.getElementById("res");
   resBox.innerHTML = `
     <div class="hint">
-      <b>Modo câmera</b><br>
-      Aponte para o código (15–25 cm).<br>
-      Evite reflexo e segure firme.
+      A câmera abriu. Olhe as instruções no centro da tela.
     </div>
-    <div class="hint" id="scanMsg" style="margin-top:10px;">📷 Preparando câmera…</div>
   `;
-
-  const msgEl = document.getElementById("scanMsg");
 
   videoEl = document.createElement("video");
   videoEl.id = "scanVideo";
@@ -251,26 +287,42 @@ async function scan(){
 
   reader = new ZXing.BrowserMultiFormatReader(hints);
 
+  // dicas progressivas
+  const startedAt = Date.now();
+  const nudgeTimer = setInterval(() => {
+    if (!scanning) { clearInterval(nudgeTimer); return; }
+    const secs = Math.floor((Date.now() - startedAt)/1000);
+    if (secs === 2) showOverlay("🔎 Procurando… mantenha o código centralizado.");
+    if (secs === 5) showOverlay("✨ Dica: se desfocar, <b>afaste</b> um pouco.");
+    if (secs === 8) showOverlay("💡 Se estiver brilhando, <b>incline</b> a embalagem (menos reflexo).");
+  }, 1000);
+
   try{
     reader.decodeFromVideoDevice(null, videoEl, (result) => {
       if(!result) return;
 
       const code = result.getText().replace(/\D/g, "");
+
+      // tamanhos típicos
       if (![8,12,13].includes(code.length)) {
-        msgEl.textContent = "⚠️ Ajuste a distância ou o foco…";
+        showOverlay("⚠️ Ajuste a distância/foco e tente de novo…");
         return;
       }
 
+      // confirmação 2x
       if (code === lastScanValue) sameScanCount++;
       else { lastScanValue = code; sameScanCount = 1; }
 
       if (sameScanCount < 2) {
-        msgEl.textContent = `Confirmando leitura (${sameScanCount}/2)… segure firme.`;
+        showOverlay(`✅ Código detectado… confirmando (${sameScanCount}/2).<br>Segure firme por 1s.`);
         return;
       }
 
+      clearInterval(nudgeTimer);
       stopScan();
-      vibrate([60,40,60]);
+
+      // feedback
+      vibrate([60,40,60]); // Android ok; iPhone geralmente não
       beep();
       flashGreen();
 
@@ -278,6 +330,7 @@ async function scan(){
       buscar(code);
     });
   }catch(e){
+    clearInterval(nudgeTimer);
     stopScan();
     resBox.textContent = "Erro ao acessar a câmera.";
   }
