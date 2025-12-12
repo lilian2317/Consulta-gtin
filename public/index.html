@@ -24,12 +24,23 @@
 <div class="wrap">
   <button onclick="scan()">Escanear código</button>
 
-  <div class="hint">Você pode buscar por <b>GTIN</b> (números) ou por <b>Nome</b> (texto).</div>
-  <input id="q" placeholder="Digite o GTIN ou o nome do produto">
-  <button onclick="buscar()">Buscar</button>
-
-  <div class="card" id="res">Aguardando…</div>
+<div class="hint">
+  Dica: se a câmera desfocar, <b>afaste o celular</b> até o código ficar bem nítido.
 </div>
+
+<div style="display:grid; gap:10px;">
+  <button onclick="scan()" style="background:#3a3a3a;">Tentar de novo</button>
+</div>
+
+<input id="q" placeholder="Digite o GTIN ou o nome do produto">
+
+<div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+  <button onclick="buscar()">Buscar</button>
+  <button onclick="atualizar()" style="background:#22c55e;">Atualizar</button>
+</div>
+
+<div class="card" id="res">Aguardando…</div>
+
 
 <script src="https://unpkg.com/@zxing/library@latest"></script>
 <script>
