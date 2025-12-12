@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Consulta GTIN</title>
+  <link rel="manifest" href="/manifest.json">
+  <style>
+    body { font-family: system-ui; background:#0b0b0b; color:#fff; margin:0 }
+    header { padding:16px; font-size:20px; font-weight:700 }
+    .wrap { padding:16px; display:grid; gap:12px }
+    button,input { font-size:18px; padding:14px; border-radius:12px; border:0 }
+    button { background:#2f7cff; color:#fff; font-weight:700 }
+    .card { background:#151515; border-radius:16px; padding:16px }
+    img { width:100%; max-height:260px; object-fit:contain; border-radius:12px }
+  </style>
+</head>
+<body>
+<header>Consulta de Produto</header>
+
+<div class="wrap">
+  <button onclick="scan()">Escanear código</button>
+  <input id="gtin" placeholder="Ou digite o GTIN">
+  <button onclick="buscar()">Buscar</button>
+  <div class="card" id="res">Aguardando…</div>
+</div>
+
+<script src="https://unpkg.com/@zxing/library@latest"></script>
+<script>
+let reader;
+
+async function buscar(code){
+  const gtin = code || document.getElementById("gtin").value;
+  const r = await fetch(`/api/lookup?gtin=${gtin}`);
+  const d = await r.json();
+  document.getElementById("res").innerHTML = d.found
+    ? `<b>${d.name}</b><br>Preço: R$ ${d.preco}<br>${d.img ? `<img src="${d.img}">` : ""}`
+    : "Produto não encontrado";
+}
+
+async function scan(){
+  reader = new ZXing.BrowserBarcodeReader();
+  const video = document.createElement("video");
+  document.body.appendChild(video);
+  reader.decodeFromVideoDevice(null, video, (res) => {
+    if(res){
+      reader.reset();
+      video.remove();
+      buscar(res.text);
+    }
+  });
+}
+</script>
+</body>
+</html>
