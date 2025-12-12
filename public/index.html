@@ -15,6 +15,10 @@
     button, input { font-size:22px; padding:16px; border-radius:16px; border:0; width:100%; }
     button { font-weight:900; background:#2f7cff; color:#fff; }
     button.update { background:#22c55e; color:#000; }
+    button.gray { background:#3a3a3a; color:#fff; }
+
+    /* ✅ linha de botões lado a lado */
+    .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 
     input { background:#fff; color:#000; }
 
@@ -75,10 +79,14 @@
 
   <input id="q" placeholder="Digite o GTIN ou o nome do produto">
 
-  <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+  <!-- ✅ Buscar + Limpar lado a lado -->
+  <div class="row">
     <button onclick="buscar()">🔍 Buscar</button>
-    <button class="update" onclick="atualizar()">🔄 Atualizar</button>
+    <button class="gray" onclick="limpar()">🧹 Limpar</button>
   </div>
+
+  <!-- ✅ Atualizar embaixo -->
+  <button class="update" onclick="atualizar()">🔄 Atualizar</button>
 
   <div id="ok" class="okBanner">✅ CÓDIGO LIDO!</div>
 
@@ -170,6 +178,13 @@ function renderItems(items){
       </div>
     `;
   }).join('<hr>');
+}
+
+function limpar(){
+  stopScan();
+  document.getElementById("q").value = "";
+  lastQuery = "";
+  document.getElementById("res").textContent = "Aguardando…";
 }
 
 async function buscar(forced){
