@@ -3,141 +3,238 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Consulta GTIN</title>
+  <title>Consulta de Produtos</title>
   <link rel="manifest" href="/manifest.json">
+
   <style>
-    body { font-family: system-ui; background:#0b0b0b; color:#fff; margin:0 }
-    header { padding:18px; font-size:24px; font-weight:800 } /* MAIOR */
-    .wrap { padding:16px; display:grid; gap:14px; max-width:700px; margin:0 auto; }
-    button,input { font-size:22px; padding:16px; border-radius:14px; border:0 } /* MAIOR */
-    button { background:#2f7cff; color:#fff; font-weight:800 }
-    .card { background:#151515; border-radius:18px; padding:16px }
-    .itemTitle { font-size:24px; font-weight:900; margin-bottom:6px } /* MAIOR */
-    .itemPrice { font-size:22px; font-weight:800; margin-bottom:10px } /* MAIOR */
-    .hint { opacity:.85; font-size:18px }
-    img { width:100%; max-height:320px; object-fit:contain; border-radius:14px; margin-top:10px; background:#0b0b0b; }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont;
+      background:#0b0b0b;
+      color:#ffffff;
+      margin:0;
+    }
+
+    header {
+      padding:20px;
+      font-size:26px;
+      font-weight:900;
+      text-align:center;
+    }
+
+    .wrap {
+      padding:16px;
+      display:grid;
+      gap:14px;
+      max-width:720px;
+      margin:0 auto;
+    }
+
+    button, input {
+      font-size:22px;
+      padding:16px;
+      border-radius:16px;
+      border:0;
+      width:100%;
+    }
+
+    button {
+      font-weight:900;
+      background:#2f7cff;
+      color:#fff;
+    }
+
+    button.secondary {
+      background:#3a3a3a;
+    }
+
+    button.update {
+      background:#22c55e;
+      color:#000;
+    }
+
+    input {
+      background:#ffffff;
+      color:#000;
+    }
+
+    .hint {
+      font-size:20px;
+      opacity:0.9;
+      line-height:1.3;
+      text-align:center;
+    }
+
+    .card {
+      background:#151515;
+      border-radius:18px;
+      padding:18px;
+    }
+
+    .product-name {
+      font-size:26px;
+      font-weight:900;
+      margin-bottom:8px;
+    }
+
+    .price {
+      font-size:24px;
+      font-weight:900;
+      margin-bottom:12px;
+    }
+
+    .price span {
+      background:#ffe45c;
+      color:#111;
+      padding:6px 12px;
+      border-radius:12px;
+    }
+
+    img {
+      width:100%;
+      max-height:320px;
+      object-fit:contain;
+      border-radius:14px;
+      margin-top:12px;
+      background:#0b0b0b;
+    }
+
+    hr {
+      border:0;
+      border-top:1px solid #2a2a2a;
+      margin:14px 0;
+    }
   </style>
 </head>
+
 <body>
-<header>Consulta de Produto</header>
+
+<header>Consulta de Produtos</header>
 
 <div class="wrap">
-  <button onclick="scan()">Escanear código</button>
 
-<div class="hint">
-  Dica: se a câmera desfocar, <b>afaste o celular</b> até o código ficar bem nítido.
+  <button onclick="scan()">📷 Escanear código de barras</button>
+
+  <div class="hint">
+    Se a câmera desfocar, <b>afaste o celular</b> até o código ficar bem nítido.
+  </div>
+
+  <button class="secondary" onclick="scan()">🔄 Tentar de novo</button>
+
+  <input id="q" placeholder="Digite o GTIN ou o nome do produto">
+
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+    <button onclick="buscar()">🔍 Buscar</button>
+    <button class="update" onclick="atualizar()">🔄 Atualizar</button>
+  </div>
+
+  <div class="card" id="res">Aguardando…</div>
+
 </div>
-
-<div style="display:grid; gap:10px;">
-  <button onclick="scan()" style="background:#3a3a3a;">Tentar de novo</button>
-</div>
-
-<input id="q" placeholder="Digite o GTIN ou o nome do produto">
-
-<div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
-  <button onclick="buscar()">Buscar</button>
-  <button onclick="atualizar()" style="background:#22c55e;">Atualizar</button>
-</div>
-
-<div class="card" id="res">Aguardando…</div>
 
 <script src="https://unpkg.com/@zxing/library@latest"></script>
 <script>
 let reader;
-let audioCtx;
-let lastQuery = "";     // guarda o último GTIN/nome buscado
-let scanning = false;   // evita abrir câmera duplicada
+let lastQuery = "";
+let scanning = false;
 
-function beep() {
-  try {
-    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    const o = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    o.type = "sine";
+/* 🔔 bip simples (compatível com iPhone) */
+function beep(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator();
     o.frequency.value = 880;
-    g.gain.value = 0.08;
-    o.connect(g); g.connect(audioCtx.destination);
+    o.connect(ctx.destination);
     o.start();
-    setTimeout(() => o.stop(), 90);
-  } catch (e) {}
-}
-
-function formatPrice(v){
-  if (v === null || v === undefined || v === "") return "—";
-  if (typeof v === "number") return v.toLocaleString("pt-BR", {style:"currency", currency:"BRL"});
-  // se vier texto, tenta manter bonitinho
-  return String(v).includes("R$") ? String(v) : ("R$ " + String(v));
+    setTimeout(() => o.stop(), 80);
+  }catch(e){}
 }
 
 function escapeHtml(s){
-  return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+  return String(s).replace(/[&<>"']/g, m =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])
+  );
+}
+
+function formatPrice(v){
+  if(v === null || v === undefined || v === "") return "—";
+  if(typeof v === "number"){
+    return v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+  }
+  return String(v).includes("R$") ? v : ("R$ " + v);
 }
 
 function renderItems(items){
   const res = document.getElementById("res");
-  if (!items || !items.length) { res.textContent = "Produto não encontrado"; return; }
+  if(!items || !items.length){
+    res.textContent = "Produto não encontrado";
+    return;
+  }
 
-  res.innerHTML = items.map((d) => `
-    <div style="margin-bottom:18px;">
-      <div style="font-size:26px;font-weight:900;margin-bottom:6px;">${escapeHtml(d.name)}</div>
-
-      <div style="font-size:24px;font-weight:900;margin-bottom:10px;">
-        Preço:
-        <span style="display:inline-block;background:#ffe45c;color:#111;padding:6px 10px;border-radius:10px;font-weight:900;">
-          ${escapeHtml(formatPrice(d.preco))}
-        </span>
+  res.innerHTML = items.map(p => `
+    <div>
+      <div class="product-name">${escapeHtml(p.name)}</div>
+      <div class="price">
+        Preço: <span>${escapeHtml(formatPrice(p.preco))}</span>
       </div>
-
-      ${d.gtin ? `<div class="hint">GTIN: ${escapeHtml(d.gtin)}</div>` : ""}
-      ${d.img ? `<img src="${d.img}" alt="Imagem do produto" style="width:100%;max-height:320px;object-fit:contain;border-radius:14px;margin-top:10px;background:#0b0b0b;">` : ""}
+      ${p.gtin ? `<div class="hint">GTIN: ${escapeHtml(p.gtin)}</div>` : ""}
+      ${p.img ? `<img src="${p.img}" alt="Imagem do produto">` : ""}
     </div>
-  `).join('<hr style="border:0;border-top:1px solid #2a2a2a;margin:12px 0;">');
+  `).join('<hr>');
 }
 
 async function buscar(forced){
   const q = (forced || document.getElementById("q").value).trim();
-  if (!q) { document.getElementById("res").textContent = "Digite um GTIN ou um nome."; return; }
+  if(!q){
+    document.getElementById("res").textContent = "Digite um GTIN ou nome.";
+    return;
+  }
 
   lastQuery = q;
   document.getElementById("res").textContent = "Buscando no Notion…";
 
   const r = await fetch(`/api/lookup?q=${encodeURIComponent(q)}`);
-  const d = await r.json().catch(()=> ({}));
+  const d = await r.json().catch(()=>({}));
 
-  if (!r.ok) { document.getElementById("res").textContent = "Erro ao buscar."; return; }
-  if (!d.found) { document.getElementById("res").textContent = "Produto não encontrado"; return; }
+  if(!r.ok || !d.found){
+    document.getElementById("res").textContent = "Produto não encontrado";
+    return;
+  }
 
   renderItems(d.items);
 }
 
 function atualizar(){
-  if (!lastQuery) {
-    document.getElementById("res").textContent = "Nada para atualizar. Busque/escaneie um produto primeiro.";
+  if(!lastQuery){
+    document.getElementById("res").textContent =
+      "Busque ou escaneie um produto primeiro.";
     return;
   }
-  buscar(lastQuery); // refaz a consulta direto no Notion (valor mais recente)
+  buscar(lastQuery);
 }
 
 async function scan(){
-  if (scanning) return;
+  if(scanning) return;
   scanning = true;
 
   const resBox = document.getElementById("res");
-  resBox.innerHTML = `<div class="hint">Aponte para o código. Se desfocar, <b>afaste o celular</b> até ficar nítido.</div>`;
+  resBox.innerHTML = `
+    <div class="hint">
+      Aponte para o código.<br>
+      Se desfocar, <b>afaste o celular</b>.
+    </div>
+  `;
 
-  // fecha scan anterior se tiver
-  try { reader?.reset?.(); } catch(e) {}
+  try{ reader?.reset?.(); }catch(e){}
 
   const video = document.createElement("video");
-  video.setAttribute("playsinline", "true");
-  video.style.width = "100%";
-  video.style.borderRadius = "18px";
-  video.style.transform = "scale(1.15)";
-  document.querySelector(".wrap").insertBefore(video, resBox);
+  video.setAttribute("playsinline","true");
+  video.style.width="100%";
+  video.style.borderRadius="18px";
+  video.style.marginTop="10px";
+  document.querySelector(".wrap").insertBefore(video,resBox);
 
-  // ✅ Formatos GTIN mais comuns
   const hints = new Map();
-  hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+  hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,[
     ZXing.BarcodeFormat.EAN_13,
     ZXing.BarcodeFormat.EAN_8,
     ZXing.BarcodeFormat.UPC_A
@@ -145,29 +242,26 @@ async function scan(){
 
   reader = new ZXing.BrowserMultiFormatReader(hints);
 
-  try {
-    const devices = await ZXing.BrowserCodeReader.listVideoInputDevices();
-    const backCam = devices.find(d => /back|traseira|rear/i.test(d.label)) || devices[0];
-
-    reader.decodeFromVideoDevice(backCam?.deviceId ?? null, video, (result) => {
-      if (result) {
+  try{
+    reader.decodeFromVideoDevice(null,video,(result)=>{
+      if(result){
         const code = result.getText().trim();
-
-        // encerra scan
-        try { reader.reset(); } catch(e) {}
+        reader.reset();
         video.remove();
         scanning = false;
-
         beep();
-
         document.getElementById("q").value = code;
         buscar(code);
       }
     });
-  } catch (e) {
+  }catch(e){
     video.remove();
-    resBox.textContent = "Não consegui acessar a câmera. Verifique permissões do navegador.";
     scanning = false;
+    resBox.textContent =
+      "Não foi possível acessar a câmera. Feche e abra o app.";
   }
 }
 </script>
+
+</body>
+</html>
